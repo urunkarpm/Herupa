@@ -31,6 +31,42 @@
   animation: shimmer 1.8s infinite linear;
 }
 
+/* Bouncy action animations */
+.action-bounce {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+              background-color 0.15s ease,
+              border-color 0.15s ease,
+              color 0.15s ease,
+              box-shadow 0.15s ease,
+              opacity 0.15s ease;
+  will-change: transform;
+}
+
+.action-bounce:hover:not(:disabled) {
+  transform: scale(1.06) translateY(-1px);
+}
+
+.action-bounce:active:not(:disabled) {
+  transform: scale(0.92) translateY(1px);
+}
+
+.action-bounce-sm {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+              background-color 0.15s ease,
+              border-color 0.15s ease,
+              color 0.15s ease,
+              opacity 0.15s ease;
+  will-change: transform;
+}
+
+.action-bounce-sm:hover:not(:disabled) {
+  transform: scale(1.12);
+}
+
+.action-bounce-sm:active:not(:disabled) {
+  transform: scale(0.88);
+}
+
 /* Custom scrollbar for dark glass UI */
 ::-webkit-scrollbar {
   width: 6px;
