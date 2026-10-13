@@ -6,12 +6,12 @@ use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, State,
+    AppHandle, Emitter, Manager, State,
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-use gemini::{send_gemini_request, SessionStore};
+use gemini::{send_gemini_request, transcribe_audio_request, SessionStore};
 use secrets::SecretsManager;
 use window::HoverManager;
 
@@ -89,6 +89,20 @@ async fn send_prompt(
     Ok(())
 }
 
+#[tauri::command]
+async fn transcribe_audio(
+    audio_base64: String,
+    mime_type: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let api_key = match state.secrets.get_api_key()? {
+        Some(k) => k,
+        None => return Err("API key not configured".to_string()),
+    };
+
+    transcribe_audio_request(api_key, audio_base64, mime_type).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -150,15 +164,31 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Register global hotkey (Ctrl + Space)
+            // Register global hotkeys
+            // 1. Toggle Window (Ctrl + Space)
             let ctrl_space = Shortcut::new(Some(Modifiers::CONTROL), Code::Space);
+            // 2. Toggle Dictation / Voice Recording (Ctrl + Alt)
+            let ctrl_alt = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyV);
+
+            let ctrl_space_clone = ctrl_space.clone();
+            let ctrl_alt_clone = ctrl_alt.clone();
+
             let _ = app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, shortcut, event| {
-                        if shortcut == &ctrl_space && event.state() == ShortcutState::Pressed {
-                            let state = app.state::<AppState>();
-                            if let Some(window) = app.get_webview_window("main") {
-                                state.hover_manager.toggle(&window);
+                        if event.state() == ShortcutState::Pressed {
+                            if shortcut == &ctrl_space_clone {
+                                let state = app.state::<AppState>();
+                                if let Some(window) = app.get_webview_window("main") {
+                                    state.hover_manager.toggle(&window);
+                                }
+                            } else if shortcut == &ctrl_alt_clone {
+                                // Ensure window is visible/expanded and notify frontend
+                                let state = app.state::<AppState>();
+                                if let Some(window) = app.get_webview_window("main") {
+                                    state.hover_manager.set_expanded(&window, true);
+                                    let _ = window.emit("toggle-dictation", ());
+                                }
                             }
                         }
                     })
@@ -166,6 +196,7 @@ pub fn run() {
             );
 
             let _ = app.global_shortcut().register(ctrl_space);
+            let _ = app.global_shortcut().register(ctrl_alt);
 
             // Apply vibrancy effect on supported platforms (Windows/macOS)
             if let Some(window) = app.get_webview_window("main") {
@@ -189,6 +220,7 @@ pub fn run() {
             clear_chat_history,
             cancel_current_request,
             send_prompt,
+            transcribe_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
