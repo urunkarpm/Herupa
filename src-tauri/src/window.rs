@@ -60,17 +60,19 @@ impl HoverManager {
                     None => continue,
                 };
 
-                // Position the window dynamically at top-center of primary monitor if available
-                if let Ok(Some(monitor)) = window.primary_monitor() {
-                    let monitor_size = monitor.size();
-                    let window_width = 720;
-                    let target_x = (monitor_size.width as i32 - window_width) / 2;
-                    let target_y = 0;
+                let monitor = match window.primary_monitor() {
+                    Ok(Some(m)) => m,
+                    _ => continue,
+                };
 
-                    if let Ok(pos) = window.outer_position() {
-                        if pos.x != target_x || pos.y != target_y {
-                            let _ = window.set_position(tauri::PhysicalPosition::new(target_x, target_y));
-                        }
+                let m_size = monitor.size();
+                let window_width = 720;
+                let bar_x_start = (m_size.width as i32 - window_width) / 2;
+                let bar_x_end = bar_x_start + window_width;
+
+                if let Ok(pos) = window.outer_position() {
+                    if pos.x != bar_x_start || pos.y != 0 {
+                        let _ = window.set_position(tauri::PhysicalPosition::new(bar_x_start, 0));
                     }
                 }
 
@@ -79,12 +81,7 @@ impl HoverManager {
                 let focused = is_input_focused.load(Ordering::Relaxed);
 
                 if let Some((cx, cy)) = cursor_pos {
-                    if let Ok(Some(monitor)) = window.primary_monitor() {
-                        let m_size = monitor.size();
-                        let bar_x_start = (m_size.width as i32 - 720) / 2;
-                        let bar_x_end = bar_x_start + 720;
-
-                        // Check top 2px edge inside horizontal span
+                    // Check top 2px edge inside horizontal span
                         let is_in_trigger_zone = cy <= 2 && cx >= bar_x_start && cx <= bar_x_end;
 
                         // Check if inside expanded window area (top 520px)
