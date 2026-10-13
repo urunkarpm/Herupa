@@ -206,6 +206,63 @@ pub async fn send_gemini_request(
     *handle_lock = Some(task);
 }
 
+pub async fn transcribe_audio_request(
+    api_key: String,
+    audio_base64: String,
+    mime_type: String,
+) -> Result<String, String> {
+    let client = Client::new();
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        DEFAULT_GEMINI_MODEL, api_key
+    );
+
+    let request_body = json!({
+        "contents": [{
+            "parts": [
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": audio_base64
+                    }
+                },
+                {
+                    "text": "Transcribe the spoken audio accurately into text. Return ONLY the transcription text, nothing else."
+                }
+            ]
+        }]
+    });
+
+    let res = client
+        .post(&url)
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_else(|_| "Unknown API error".to_string());
+        return Err(err_text);
+    }
+
+    let value: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    if let Some(candidates) = value.get("candidates").and_then(|c| c.as_array()) {
+        if let Some(first_candidate) = candidates.first() {
+            if let Some(parts) = first_candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                let mut transcription = String::new();
+                for part in parts {
+                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                        transcription.push_str(text);
+                    }
+                }
+                return Ok(transcription.trim().to_string());
+            }
+        }
+    }
+
+    Err("No transcription returned from Gemini".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

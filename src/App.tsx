@@ -1,19 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Sparkles,
   Key,
   CornerDownLeft,
   X,
-  Copy,
-  Check,
-  RotateCcw,
-  Bot,
-  User,
   Zap,
   Scissors,
   Wand2,
@@ -21,286 +15,364 @@ import {
   HelpCircle,
   Camera,
   Layers,
+  RotateCcw,
+  Copy,
+  Check,
+  Bot,
+  User,
+  Mic,
+  MicOff,
+  Loader2,
 } from "lucide-react";
 
-interface WindowStatePayload {
-  expanded: boolean;
+interface Persona {
+  id: string;
+  name: string;
+  prompt: string;
 }
 
-interface ChunkPayload {
+const PERSONAS: Persona[] = [
+  {
+    id: "coder",
+    name: "Coder",
+    prompt:
+      "You are a helpful coding assistant. Keep explanations concise and provide clean code examples.",
+  },
+  {
+    id: "writer",
+    name: "Writer",
+    prompt:
+      "You are a skilled creative writer and editor. Improve phrasing, maintain tone, and polish prose.",
+  },
+  {
+    id: "concise",
+    name: "Concise",
+    prompt:
+      "Provide direct, extremely brief answers without unnecessary filler.",
+  },
+];
+
+interface ChatMsg {
+  role: "user" | "assistant";
   text: string;
 }
 
-interface ErrorPayload {
-  error: string;
-}
-
-type Persona = {
-  id: string;
-  name: string;
-  instruction: string;
-};
-
-const PERSONAS: Persona[] = [
-  { id: "default", name: "Assistant", instruction: "You are a helpful, concise AI desktop assistant." },
-  { id: "coder", name: "Coder", instruction: "You are an expert developer. Provide clear, accurate code solutions with minimal fluff." },
-  { id: "writer", name: "Writer", instruction: "You are an expert editor and copywriter. Produce polished, clear, and compelling writing." },
-  { id: "concise", name: "Concise", instruction: "Be extremely brief and direct in your answers. Maximum 2-3 sentences unless asked for code." },
-];
-
 export default function App() {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [inputPrompt, setInputPrompt] = useState("");
-  const [lastPrompt, setLastPrompt] = useState("");
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
-  const [currentResponse, setCurrentResponse] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [inputApiKey, setInputApiKey] = useState<string>("");
+  const [isKeyConfigured, setIsKeyConfigured] = useState<boolean>(false);
+  const [inputPrompt, setInputPrompt] = useState<string>("");
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [currentResponse, setCurrentResponse] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedPersona, setSelectedPersona] = useState<Persona>(PERSONAS[0]);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Audio / Dictation state
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const responseEndRef = useRef<HTMLDivElement>(null);
 
-  // Initial setup: check API key & listen to Tauri events
   useEffect(() => {
-    checkApiKey();
+    // Fetch initial API key state
+    invoke<string | null>("get_api_key")
+      .then((key) => {
+        if (key) {
+          setIsKeyConfigured(true);
+        }
+      })
+      .catch((err) => console.error("Failed to load API key:", err));
 
-    const unlistenWindowState = listen<WindowStatePayload>("window-state-changed", (event) => {
-      setIsExpanded(event.payload.expanded);
-      if (event.payload.expanded) {
-        setTimeout(() => inputRef.current?.focus(), 50);
-      }
-    });
-
-    const unlistenChunk = listen<ChunkPayload>("ai-chunk", (event) => {
-      setIsLoading(true);
+    // Listen to AI events from Tauri backend
+    const unlistenChunk = listen<{ text: string }>("ai-chunk", (event) => {
       setCurrentResponse((prev) => prev + event.payload.text);
     });
 
     const unlistenDone = listen("ai-done", () => {
-      setIsLoading(false);
-      setCurrentResponse((prevResponse) => {
-        if (prevResponse) {
-          setMessages((prev) => [...prev, { role: "assistant", text: prevResponse }]);
+      setCurrentResponse((fullResponse) => {
+        if (fullResponse) {
+          setMessages((prev) => [...prev, { role: "assistant", text: fullResponse }]);
         }
         return "";
       });
+      setIsLoading(false);
     });
 
-    const unlistenError = listen<ErrorPayload>("ai-error", (event) => {
-      setIsLoading(false);
+    const unlistenError = listen<{ error: string }>("ai-error", (event) => {
       setErrorMessage(event.payload.error);
+      setIsLoading(false);
+    });
+
+    // Listen to global shortcut dictation toggle
+    const unlistenDictation = listen("toggle-dictation", () => {
+      handleToggleRecording();
     });
 
     return () => {
-      unlistenWindowState.then((f) => f());
       unlistenChunk.then((f) => f());
       unlistenDone.then((f) => f());
       unlistenError.then((f) => f());
+      unlistenDictation.then((f) => f());
     };
-  }, []);
+  }, [isRecording]);
 
   useEffect(() => {
-    if (responseEndRef.current) {
-      responseEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    responseEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, currentResponse]);
 
-  async function checkApiKey() {
+  const handleSaveApiKey = async () => {
+    if (!inputApiKey.trim()) return;
     try {
-      const key = await invoke<string | null>("get_api_key");
-      setHasApiKey(!!key);
-    } catch {
-      setHasApiKey(false);
+      await invoke("save_api_key", { key: inputApiKey.trim() });
+      setIsKeyConfigured(true);
+      setInputApiKey("");
+      setErrorMessage(null);
+    } catch (e: any) {
+      setErrorMessage(`Failed to save API key: ${e.toString()}`);
     }
-  }
+  };
 
-  async function handleSaveKey(e: React.FormEvent) {
-    e.preventDefault();
-    if (!apiKeyInput.trim()) return;
-    try {
-      await invoke("save_api_key", { key: apiKeyInput.trim() });
-      setHasApiKey(true);
-      setApiKeyInput("");
-    } catch (err) {
-      setErrorMessage(String(err));
-    }
-  }
-
-  async function handleSend(promptText?: string) {
-    const textToSend = promptText || inputPrompt;
+  const handleSend = async (customPrompt?: string) => {
+    const textToSend = customPrompt ?? inputPrompt;
     if (!textToSend.trim() || isLoading) return;
 
     setErrorMessage(null);
-    setLastPrompt(textToSend);
     setMessages((prev) => [...prev, { role: "user", text: textToSend }]);
-    setInputPrompt("");
-    setCurrentResponse("");
+    if (!customPrompt) setInputPrompt("");
     setIsLoading(true);
+    setCurrentResponse("");
 
     try {
       await invoke("send_prompt", {
         prompt: textToSend,
-        systemInstruction: selectedPersona.instruction,
+        systemInstruction: selectedPersona.prompt,
         imageBase64: attachedImage,
       });
       setAttachedImage(null);
-    } catch (err) {
+    } catch (err: any) {
+      setErrorMessage(err.toString());
       setIsLoading(false);
-      setErrorMessage(String(err));
     }
-  }
+  };
 
-  async function handleAskClipboard() {
+  const handleCancelRequest = async () => {
+    await invoke("cancel_current_request");
+    setIsLoading(false);
+  };
+
+  const handleNewChat = async () => {
+    await invoke("clear_chat_history");
+    setMessages([]);
+    setCurrentResponse("");
+    setErrorMessage(null);
+  };
+
+  const handleAskClipboard = async () => {
     try {
       const clipboardText = await readText();
-      if (!clipboardText) {
-        setErrorMessage("Clipboard is empty or contains non-text content.");
-        return;
+      if (clipboardText) {
+        setInputPrompt(`Regarding this clipboard content:\n\n"${clipboardText}"\n\n`);
       }
-      const prompt = `Here is text from my clipboard:\n\n"${clipboardText}"\n\nPlease analyze, summarize, or answer questions about it.`;
-      handleSend(prompt);
-    } catch (err) {
-      setErrorMessage(`Failed to read clipboard: ${err}`);
+    } catch (e: any) {
+      setErrorMessage("Could not read clipboard contents.");
     }
-  }
+  };
 
-  async function handleNewChat() {
-    try {
-      await invoke("cancel_current_request");
-      await invoke("clear_chat_history");
-      setMessages([]);
-      setCurrentResponse("");
-      setIsLoading(false);
-      setErrorMessage(null);
-      setAttachedImage(null);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  async function handleCancelRequest() {
-    try {
-      await invoke("cancel_current_request");
-      setIsLoading(false);
-      if (currentResponse) {
-        setMessages((prev) => [...prev, { role: "assistant", text: currentResponse + " [Cancelled]" }]);
-        setCurrentResponse("");
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  function handleQuickAction(actionType: string) {
-    if (messages.length === 0 && !inputPrompt.trim()) return;
-    const lastMsg = messages[messages.length - 1]?.text || inputPrompt;
-
-    let actionPrompt = "";
-    switch (actionType) {
+  const handleQuickAction = (action: string) => {
+    if (!inputPrompt.trim()) return;
+    let prefix = "";
+    switch (action) {
       case "summarize":
-        actionPrompt = `Summarize the following clearly in concise bullet points:\n\n${lastMsg}`;
+        prefix = "Please summarize the following concisely:\n\n";
         break;
       case "rewrite":
-        actionPrompt = `Rewrite the following text to make it more clear, professional, and elegant:\n\n${lastMsg}`;
+        prefix = "Please rewrite and refine the following text:\n\n";
         break;
       case "translate":
-        actionPrompt = `Translate the following text into clear, fluent English (or Spanish if already in English):\n\n${lastMsg}`;
+        prefix = "Please translate the following text into English:\n\n";
         break;
       case "explain":
-        actionPrompt = `Explain the key concepts in simple terms:\n\n${lastMsg}`;
+        prefix = "Please explain the following clearly and simply:\n\n";
         break;
     }
-    if (actionPrompt) {
-      handleSend(actionPrompt);
+    handleSend(prefix + inputPrompt);
+  };
+
+  const handleScreenCapture = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: "screen" } as any,
+      });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      await video.play();
+
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const dataUrl = canvas.toDataURL("image/png");
+      const base64 = dataUrl.split(",")[1];
+      setAttachedImage(base64);
+
+      stream.getTracks().forEach((track) => track.stop());
+    } catch (err) {
+      console.log("Screen capture canceled or failed", err);
     }
-  }
+  };
 
-  // Handle Screen Context Tool
-  function handleScreenCapture() {
-    const dummyImageBase64 = "iVBORw50KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-    setAttachedImage(dummyImageBase64);
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSend();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      if (isLoading) {
-        handleCancelRequest();
-      } else {
-        invoke("toggle_window");
-      }
-    } else if (e.key === "ArrowUp") {
-      if (!inputPrompt && lastPrompt) {
-        e.preventDefault();
-        setInputPrompt(lastPrompt);
-      }
-    } else if (e.ctrlKey && e.key === "n") {
-      e.preventDefault();
-      handleNewChat();
-    }
-  }
-
-  function copyToClipboard(text: string, index: number) {
+  const copyToClipboard = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
     setCopiedIndex(index);
     setTimeout(() => setCopiedIndex(null), 2000);
-  }
+  };
+
+  // Recording & Dictation Logic
+  const handleToggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" });
+        await processAudioForTranscription(audioBlob, mediaRecorder.mimeType || "audio/webm");
+      };
+
+      mediaRecorder.start();
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+      setErrorMessage(null);
+    } catch (err: any) {
+      setErrorMessage("Microphone access denied or unavailable.");
+      console.error(err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const processAudioForTranscription = async (blob: Blob, mimeType: string) => {
+    setIsTranscribing(true);
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const audioBase64 = btoa(binary);
+
+      const transcription = await invoke<string>("transcribe_audio", {
+        audioBase64,
+        mimeType,
+      });
+
+      if (transcription) {
+        setInputPrompt((prev) => (prev ? `${prev} ${transcription}` : transcription));
+      }
+    } catch (err: any) {
+      setErrorMessage(`Transcription failed: ${err.toString()}`);
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
 
   return (
-    <div className="w-full h-screen flex flex-col items-center justify-start pointer-events-none">
-      {/* Sleek dark glass bar container */}
-      <div
-        className={`w-[720px] max-h-[500px] flex flex-col bg-[#0d0d12]/80 backdrop-blur-2xl border border-white/10 rounded-b-[20px] shadow-2xl transition-all duration-220 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-auto overflow-hidden ${
-          isExpanded
-            ? "translate-y-0 opacity-100 scale-100"
-            : "-translate-y-full opacity-0 scale-98"
-        }`}
-        onFocus={() => invoke("set_input_focused", { focused: true })}
-        onBlur={() => invoke("set_input_focused", { focused: false })}
-      >
-        {/* Top Header & Input Bar Zone */}
-        <div className="p-3.5 border-b border-white/5 flex flex-col gap-2.5 bg-gradient-to-r from-indigo-900/10 via-transparent to-purple-900/10">
-          {!hasApiKey ? (
-            /* API Key Prompt */
-            <form onSubmit={handleSaveKey} className="flex items-center gap-2">
+    <div className="w-full h-screen bg-transparent select-none p-2 flex flex-col justify-start items-center">
+      <div className="w-full max-w-[720px] bg-[#0d0d12]/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl text-white flex flex-col overflow-hidden transition-all duration-300">
+        {/* Top Control Bar & Prompt Input */}
+        <div className="p-3 flex flex-col gap-2 border-b border-white/10 bg-white/5">
+          {!isKeyConfigured ? (
+            <div className="flex items-center gap-2">
               <Key className="w-4 h-4 text-indigo-400 shrink-0" />
               <input
                 type="password"
-                placeholder="Enter Gemini API key to start..."
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/40 focus:outline-none focus:border-indigo-500/50"
-                autoFocus
+                placeholder="Enter your Gemini API key to start..."
+                value={inputApiKey}
+                onChange={(e) => setInputApiKey(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSaveApiKey()}
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/40 focus:outline-none focus:border-indigo-500"
               />
               <button
-                type="submit"
-                className="action-bounce bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium"
+                onClick={handleSaveApiKey}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-medium transition"
               >
-                Save Key
+                Save
               </button>
-            </form>
+            </div>
           ) : (
             <>
-              {/* Main Command Input */}
-              <div className="flex items-center gap-2.5 px-2">
-                <Sparkles className="w-5 h-5 text-indigo-400 shrink-0 animate-pulse" />
+              <div className="flex items-center gap-2">
                 <input
-                  ref={inputRef}
                   type="text"
-                  placeholder="Ask anything... (Esc to close, Ctrl+N for new chat)"
+                  placeholder={
+                    isRecording
+                      ? "Listening... Speak now..."
+                      : isTranscribing
+                      ? "Transcribing audio..."
+                      : "Ask anything, or use voice (Ctrl+Alt+V)..."
+                  }
                   value={inputPrompt}
                   onChange={(e) => setInputPrompt(e.target.value)}
-                  onKeyDown={handleKeyDown}
+                  onFocus={() => invoke("set_input_focused", { focused: true })}
+                  onBlur={() => invoke("set_input_focused", { focused: false })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   className="flex-1 bg-transparent border-none text-base text-white placeholder-white/35 focus:outline-none focus:ring-0 font-normal"
                 />
+
+                {/* Voice / Dictation Button */}
+                <button
+                  onClick={handleToggleRecording}
+                  disabled={isTranscribing}
+                  title={isRecording ? "Stop Recording" : "Voice Dictation (Ctrl+Alt+V)"}
+                  className={`action-bounce p-1.5 rounded-lg transition-colors ${
+                    isRecording
+                      ? "bg-rose-600 animate-pulse text-white"
+                      : isTranscribing
+                      ? "bg-amber-600/50 text-white/70"
+                      : "hover:bg-white/10 text-white/60 hover:text-white"
+                  }`}
+                >
+                  {isTranscribing ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                  ) : isRecording ? (
+                    <MicOff className="w-4 h-4" />
+                  ) : (
+                    <Mic className="w-4 h-4" />
+                  )}
+                </button>
+
                 {isLoading ? (
                   <button
                     onClick={handleCancelRequest}
