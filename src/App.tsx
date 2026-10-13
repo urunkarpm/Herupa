@@ -71,9 +71,14 @@ export default function App() {
 
   // Audio / Dictation state
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const isRecordingRef = useRef<boolean>(false);
   const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
 
   const responseEndRef = useRef<HTMLDivElement>(null);
 
@@ -118,7 +123,7 @@ export default function App() {
       unlistenError.then((f) => f());
       unlistenDictation.then((f) => f());
     };
-  }, [isRecording]);
+  }, []);
 
   useEffect(() => {
     responseEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -235,7 +240,7 @@ export default function App() {
 
   // Recording & Dictation Logic
   const handleToggleRecording = () => {
-    if (isRecording) {
+    if (isRecordingRef.current) {
       stopRecording();
     } else {
       startRecording();
@@ -271,7 +276,7 @@ export default function App() {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && isRecordingRef.current) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
@@ -280,13 +285,16 @@ export default function App() {
   const processAudioForTranscription = async (blob: Blob, mimeType: string) => {
     setIsTranscribing(true);
     try {
-      const arrayBuffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const audioBase64 = btoa(binary);
+      const audioBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const res = reader.result as string;
+          const base64 = res ? res.split(",")[1] : "";
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
 
       const transcription = await invoke<string>("transcribe_audio", {
         audioBase64,

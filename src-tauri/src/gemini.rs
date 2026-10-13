@@ -158,14 +158,10 @@ pub async fn send_gemini_request(
                     let text = String::from_utf8_lossy(&bytes);
                     buffer.push_str(&text);
 
-                    let mut lines: Vec<String> = buffer.split('\n').map(|s| s.to_string()).collect();
-                    if !buffer.ends_with('\n') {
-                        buffer = lines.pop().unwrap_or_default();
-                    } else {
-                        buffer.clear();
-                    }
+                    while let Some(idx) = buffer.find('\n') {
+                        let line = buffer[..idx].trim_end_matches('\r').to_string();
+                        buffer.drain(..=idx);
 
-                    for line in lines {
                         if let Some(text_chunk) = parse_sse_event_line(&line) {
                             accumulated_response.push_str(&text_chunk);
                             let _ = app_clone.emit("ai-chunk", ChunkPayload { text: text_chunk });
