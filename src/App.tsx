@@ -282,7 +282,7 @@ export default function App() {
               />
               <button
                 type="submit"
-                className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition"
+                className="action-bounce bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium"
               >
                 Save Key
               </button>
@@ -305,7 +305,7 @@ export default function App() {
                   <button
                     onClick={handleCancelRequest}
                     title="Cancel generation (Esc)"
-                    className="p-1.5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white transition"
+                    className="action-bounce p-1.5 hover:bg-white/10 rounded-lg text-white/60 hover:text-white"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -313,7 +313,7 @@ export default function App() {
                   <button
                     onClick={() => handleSend()}
                     disabled={!inputPrompt.trim()}
-                    className="p-1.5 bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600/80 rounded-lg text-white transition"
+                    className="action-bounce p-1.5 bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600/80 rounded-lg text-white"
                   >
                     <CornerDownLeft className="w-4 h-4" />
                   </button>
@@ -326,35 +326,35 @@ export default function App() {
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                   <button
                     onClick={handleAskClipboard}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/40 rounded-full text-white/80 hover:text-white transition shrink-0"
+                    className="action-bounce flex items-center gap-1 px-2.5 py-1 bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/40 rounded-full text-white/80 hover:text-white shrink-0"
                   >
                     <Zap className="w-3 h-3 text-amber-400" />
                     <span>Ask Clipboard</span>
                   </button>
                   <button
                     onClick={() => handleQuickAction("summarize")}
-                    className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white transition shrink-0"
+                    className="action-bounce flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white shrink-0"
                   >
                     <Scissors className="w-3 h-3 text-blue-400" />
                     <span>Summarize</span>
                   </button>
                   <button
                     onClick={() => handleQuickAction("rewrite")}
-                    className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white transition shrink-0"
+                    className="action-bounce flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white shrink-0"
                   >
                     <Wand2 className="w-3 h-3 text-purple-400" />
                     <span>Rewrite</span>
                   </button>
                   <button
                     onClick={() => handleQuickAction("translate")}
-                    className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white transition shrink-0"
+                    className="action-bounce flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white shrink-0"
                   >
                     <Languages className="w-3 h-3 text-emerald-400" />
                     <span>Translate</span>
                   </button>
                   <button
                     onClick={() => handleQuickAction("explain")}
-                    className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white transition shrink-0"
+                    className="action-bounce flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-white/70 hover:text-white shrink-0"
                   >
                     <HelpCircle className="w-3 h-3 text-rose-400" />
                     <span>Explain</span>
@@ -362,7 +362,7 @@ export default function App() {
                   <button
                     onClick={handleScreenCapture}
                     title="Attach screen context"
-                    className={`flex items-center gap-1 px-2 py-1 rounded-full border transition shrink-0 ${
+                    className={`action-bounce flex items-center gap-1 px-2 py-1 rounded-full border shrink-0 ${
                       attachedImage
                         ? "bg-indigo-600/30 border-indigo-400/50 text-indigo-200"
                         : "bg-white/5 hover:bg-white/10 border-white/10 text-white/70 hover:text-white"
@@ -376,7 +376,7 @@ export default function App() {
                 {/* Right: Persona & New Chat */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   <div className="relative group">
-                    <button className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-white/70 hover:text-white transition">
+                    <button className="action-bounce flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-white/70 hover:text-white">
                       <Layers className="w-3 h-3 text-indigo-400" />
                       <span>{selectedPersona.name}</span>
                     </button>
@@ -385,7 +385,7 @@ export default function App() {
                         <button
                           key={p.id}
                           onClick={() => setSelectedPersona(p)}
-                          className={`text-left px-2 py-1 rounded text-xs transition ${
+                          className={`action-bounce text-left px-2 py-1 rounded text-xs ${
                             selectedPersona.id === p.id
                               ? "bg-indigo-600 text-white font-medium"
                               : "text-white/70 hover:bg-white/10"
@@ -400,7 +400,7 @@ export default function App() {
                   <button
                     onClick={handleNewChat}
                     title="New Chat (Ctrl+N)"
-                    className="p-1 hover:bg-white/10 rounded-md text-white/60 hover:text-white transition"
+                    className="action-bounce p-1 hover:bg-white/10 rounded-md text-white/60 hover:text-white"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
@@ -417,7 +417,7 @@ export default function App() {
         {errorMessage && (
           <div className="px-4 py-2 bg-rose-950/40 border-b border-rose-500/20 text-rose-300 text-xs flex items-center justify-between">
             <span className="truncate">{errorMessage}</span>
-            <button onClick={() => setErrorMessage(null)} className="p-0.5 hover:text-white">
+            <button onClick={() => setErrorMessage(null)} className="action-bounce p-0.5 hover:text-white">
               <X className="w-3 h-3" />
             </button>
           </div>
@@ -458,7 +458,7 @@ export default function App() {
                   {msg.role === "assistant" && (
                     <button
                       onClick={() => copyToClipboard(msg.text, index)}
-                      className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 bg-white/10 hover:bg-white/20 rounded text-white/70 hover:text-white transition"
+                      className="action-bounce absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 bg-white/10 hover:bg-white/20 rounded text-white/70 hover:text-white"
                       title="Copy response"
                     >
                       {copiedIndex === index ? (
